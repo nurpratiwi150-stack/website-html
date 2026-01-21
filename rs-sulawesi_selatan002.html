@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Peta Rumah Sakit Sulawesi Selatan</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<!-- MarkerCluster -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+<!-- Locate control -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.css"/>
+
+<style>
+  :root {
+    --header-bg: #1976d2;
+    --accent: #0d47a1;
+  }
+  html, body { height:100%; margin:0; font-family: Arial, Helvetica, sans-serif; }
+  .app {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 320px;
+    min-width: 240px;
+    max-width: 420px;
+    background: #f7f9fc;
+    border-right: 1px solid #e1e7ef;
+    display: flex;
+    flex-direction: column;
+  }
+  .header {
+    background: var(--header-bg);
+    color: #fff;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header h2 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1;
+    flex: 1;
+  }
+
+  .controls {
+    padding: 10px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .controls input[type="search"], .controls select {
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid #cfdde9;
+    border-radius: 4px;
+    width: calc(100% - 16px);
+  }
+  .controls .row {
+    width:100%;
+    display:flex;
+    gap:8px;
+  }
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border:none;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .btn.secondary {
+    background: #ccc;
+    color: #222;
+  }
+
+  .list {
+    overflow: auto;
+    padding: 8px;
+    flex: 1 1 auto;
+  }
+  .item {
+    background: #fff;
+    border: 1px solid #e6eef6;
+    padding: 8px;
+    margin-bottom:8px;
+    border-radius:6px;
+    cursor: pointer;
+  }
+  .item h4 { margin:0 0 4px 0; font-size:14px; }
+  .item p { margin:0; color:#555; font-size:13px; }
+  .item .akred { margin-top:6px; font-size:12px; color:#2d6a4f; font-weight:600; }
+
+  /* Map */
+  #map {
+    flex: 1 1 auto;
+    height: 100%;
+  }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .sidebar {
+      position: absolute;
+      z-index: 1000;
+      width: 90%;
+      left: 5%;
+      top: 10px;
+      max-height: 60vh;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.16);
+      border-radius: 8px;
+    }
+    .app { flex-direction: column; }
+  }
+  .meta {
+    font-size: 12px;
+    color: #666;
+    padding: 8px 12px;
+    border-top: 1px solid #e8eef6;
+  }
+
+  /* highlight when marker selected */
+  .item.selected { outline: 2px solid #1976d2; background: #eef6ff; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="header">
+      <h2>Peta Rumah Sakit</h2>
+      <button id="showAllBtn" class="btn" title="Tampilkan semua">Tampilkan semua</button>
+    </div>
+
+    <div class="controls">
+      <div class="row">
+        <input id="searchInput" type="search" placeholder="Cari nama atau kota..." aria-label="Cari rumah sakit" />
+      </div>
+      <div class="row">
+        <select id="cityFilter">
+          <option value="">Semua kota</option>
+        </select>
+        <button id="toggleSidebar" class="btn secondary" title="Sembunyikan sidebar">Sembunyikan</button>
+      </div>
+    </div>
+
+    <div class="list" id="list"></div>
+
+    <div class="meta" id="meta">0 rumah sakit — Klik item untuk melihat di peta</div>
+  </aside>
+
+  <div id="map"></div>
+</div>
+
+<!-- Scripts -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.js"></script>
+
+<script>
+/* Data: [name, city, lat, lng, akreditasi] 
+   NOTE: ganti nilai akreditasi sesuai data Anda (mis. "A", "B", "C", "Belum Terakreditasi", atau teks lain).
+*/
+const hospitals = [
+  ["RS Khusus Daerah Dadi","Makassar",-5.1524444,119.4218957,"A"],
+  ["RS Umum Pusat Makassar","Makassar",-5.1402632,119.4011558,"A"],
+  ["RSUP Dr. Wahidin Sudirohusodo","Makassar",-5.1346542,119.4940877,"A"],
+  ["RSUD Labuang Baji","Makassar",-5.1626637,119.4183213,"B"],
+  ["RS Otak & Jantung Pertamina Royal","Makassar",-5.1036152,119.5277685,"A"],
+  ["RSUD Haji Makassar","Makassar",-5.1793192,119.4154269,"B"],
+  ["RS Kepolisian Bhayangkara","Makassar",-5.1745683,119.4157517,"B"],
+  ["RSUD Andi Makkasau","Parepare",-4.0355022,119.6337805,"B"],
+  ["RSUD Prof. Dr. Anwar Makkatutu","Bantaeng",-5.5494806,119.9463993,"B"],
+  ["RSUD Daya Makassar","Makassar",-5.1138433,119.5115066,"B"],
+  ["RS Stella Maris","Makassar",-5.1442934,119.4085691,"B"],
+  ["RSUD Sawerigading","Palopo",-2.9404138,120.1774072,"B"],
+  ["RSUD Syekh Yusuf","Gowa",-5.2101194,119.4627544,"B"],
+  ["RS Siloam Makassar","Makassar",-5.1501524,119.4071338,"A"],
+  ["RS Islam Faisal","Makassar",-5.1628570,119.4327385,"B"],
+  ["RSUD Latemmamala","Soppeng",-4.3509201,119.8998589,"B"],
+  ["RS Khusus Gigi & Mulut Unhas","Makassar",-5.1301080,119.4242892,"B"],
+  ["RS Ibnu Sina YW-UMI","Makassar",-5.1396204,119.4462102 ,"B"],
+  ["RS Tk II Pelamonia","Makassar",-5.1380579,119.4149380,"B"],
+  ["RS Islam Gigi & Mulut FKG-UMI","Makassar",-5.1618960,119.4152891,"B"],
+  ["RSUD H.A. Sulthan Daeng Radja","Bulukumba",-5.5511087,120.1912219,"B"],
+  ["RS Grestelina","Makassar",-5.1632086,119.4452946,"B"],
+  ["RS Akademis Jaury","Makassar",-5.1312461,119.4148301,"B"],
+  ["RS Dr. Hasri Ainun Habibie","Parepare",-4.0482902,119.6224438,"B"],
+  ["RSUD Lanto Daeng Pasewang","Jeneponto",-5.6855125,119.7603687,"B"],
+  ["RS Primaya","Makassar",-5.1351070,119.4353114,"A"],
+  ["RS Khusus Ibu & Anak Siti Fatimah","Makassar",-5.1390043,119.4172269,"B"],
+  ["RSUD Tenriawaru","Bone",-4.5379336,120.3080499,"B"],
+  ["RS Universitas Hasanuddin","Makassar",-5.1333034,119.4944172,"A"],
+  ["RSUP Dr. Tadjuddin Chalid","Makassar",-5.1112092,119.5166296,"A"],
+  ["RS Anak dan Bunda Harapan Kita","Kota Jakarta Barat",-6.1850041,106.7979227,"A"],
+  ["RS Khusus Bedah Columbia Asia Pulomas","Kota Jakarta Timur",-6.1821375,106.8911965,"A"],
+  ["RSUP Fatmawati","Kota Jakarta Selatan",-6.2954410,106.7963301,"A"],
+  ["RS Gigi dan Mulut FKG Universitas Trisakti","Kota Jakarta Barat",-6.1667303,106.7968984,"A"],
+  ["RS Umum PAD Gatot Soebroto","Kota Jakarta Pusat",-6.1761063,106.8377327,"A"],
+  ["RS Khusus Kanker MRCCC Siloam Semanggi","Kota Jakarta Selatan",-6.2190731,106.8172051,"A"],
+  ["RS Gigi dan Mulut FKG Univ. Indonesia","Kota Jakarta Pusat",-6.1937712,106.8483777,"A"],
+  ["RS Umum Bhayangkara Tk. I R. Said Sukanto","Kota Jakarta Timur",-6.2695165,106.8707065,"A"],
+  ["RS Kanker Dharmais","Kota Jakarta Barat",-6.1868624,106.7980052,"A"],
+  ["RS Pusat Otak Nasional Prof DR. dr. Mahar Mardjono","Kota Jakarta Timur",-6.2461130,106.8704573,"A"],
+  ["RS Jantung dan Pembuluh Darah Harapan Kita","Kota Jakarta Barat",-6.1848588,106.7982426,"A"],
+  ["RSUPN Dr. Cipto Mangunkusumo","Kota Jakarta Pusat",-6.1974693,106.8470011,"A"],
+  ["RS Umum Dr. Suyoto Kemhan","Kota Jakarta Selatan",-6.2674388,106.7663169,"A"],
+  ["RS Penyakit Infeksi Prof. Dr. Sulianti Saroso","Kota Jakarta Utara",-6.1302621,106.8619648,"A"],
+  ["RS Umum Daerah Tarakan","Kota Jakarta Pusat",-6.1717210,106.8102816,"A"],
+  ["RSUP Persahabatan","Kota Jakarta Timur",-6.2040026,106.8838634,"A"],
+  ["RS Jiwa Dr. Soeharto Heerdjan","Kota Jakarta Barat",-6.1629153,106.7888246,"A"],
+  ["RS Khusus Daerah Duren Sawit","Kota Jakarta Timur",-6.2318582,106.9096602,"A"],
+  ["RS Umum Siloam TB Simatupang","Kota Jakarta Selatan",-6.2922560,106.7844262,"B"],
+  ["RS Jantung Jakarta","Kota Jakarta Timur",-6.2002659,106.8553431,"B"],
+  ["RS Gigi Dan Mulut YARSI","Kota Jakarta Pusat",-6.1696847,106.8687645,"B"],
+  ["RS Umum Mitra Keluarga Kelapa Gading","Kota Jakarta Utara",-6.1519586,106.8971403,"B"],
+  ["RS Umum Hermina Jatinegara","Kota Jakarta Timur",-6.2206867,106.8649937,"B"],
+  ["RS Umum dr. Abdul Radjak Salemba","Kota Jakarta Pusat",-6.1936962,106.8521016,"B"],
+  ["RS EMC Grha Kedoya","Kota Jakarta Barat",-6.1681537,106.7651548,"B"],
+  ["RS Umum MMC","Kota Jakarta Selatan",-6.2198371,106.8323904,"B"],
+  ["Rumah Sakit Eka MT Haryono","Kota Jakarta Selatan",-6.2428241,106.8593362,"B"],
+  ["Rumah Sakit Primaya","Kota Jakarta Timur",-6.1640019,106.9294673,"B"],
+  ["RS Umum Sumber Waras","Kota Jakarta Barat",-6.1684720,106.7975589,"B"],
+  ["RS Umum Tzu Chi Hospital","Kota Jakarta Utara",-6.1060994,106.7392923,"B"],
+  ["RS Islam Jakarta Pondok Kopi","Kota Jakarta Timur",-6.2201890,106.9398706,"B"],
+  ["RS Umum Abdi Waluyo","Kota Jakarta Pusat",-6.1898077,106.8290065,"B"],
+  ["RS Umum Daerah Koja","Kota Jakarta Utara",-6.1087657,106.9001514,"B"],
+  ["RS Gigi dan Mulut Univ. Prof. Moestopo","Kota Jakarta Selatan",-6.2591723,106.7651240,"B"],
+  ["RS Umum Daerah Budhi Asih","Kota Jakarta Timur",-6.2558748,106.8632553,"B"],
+  ["RS Umum Husada","Kota Jakarta Pusat",-6.1474521,106.8295138,"B"],
+  ["RS Umum Siloam Hospitals Kebon Jeruk","Kota Jakarta Barat",-6.1474521,106.8295138,"B"],
+  ["RS Bedah Siloam Asri","Kota Jakarta Selatan",-6.2545647,106.8323760,"B"],
+  ["RS UIN Syarif Hidayatullah Jakarta","Kota Jakarta Timur",-6.3079165,106.7566314,"B"],
+  ["RS Umum Mitra Kemayoran","Kota Jakarta Pusat",-6.1520157,106.8586379,"B"],
+  ["RS Umum Royal Progress","Kota Jakarta Utara",-6.1387893,106.8653367,"B"],
+  ["RS Umum Universitas Kristen Indonesia","Kota Jakarta Timur",-6.2505393,106.8720569,"B"],
+  ["RS Primaya PGI Cikini","Kota Jakarta Pusat",-6.1919692,106.8419156,"B"],
+  ["RS Umum Royal Taruma","Kota Jakarta Barat",-6.1664033,106.7855205,"B"],
+  ["RS Umum AL Cilandak","Kota Jakarta Selatan",-6.3048796,106.8105147,"B"],
+  ["RS Umum Mayapada","Kota Jakarta Selatan",-6.2981660,106.7857133,"B"],
+  ["RS Gigi Dan Mulut Angkatan Udara","Kota Jakarta Timur",-6.2879527,106.8976586,"B"],
+  ["RS Umum Hermina Kemayoran","Kota Jakarta Pusat",-6.1545904,106.8458601,"B"],
+  ["RS Umum Pantai Indah Kapuk","Kota Jakarta Utara",-6.1116570,106.7531466,"B"],
+  ["RS Umum Premier Jatinegara","Kota Jakarta Timur",-6.2216486,106.8686794,"B"],
+  ["RS Khusus Ibu Anak Bunda Jakarta","Kota Jakarta Pusat",-6.1959214,106.8367306,"B"],
+  ["RS Umum Daerah Cengkareng","Kota Jakarta Barat",-6.1430393,106.7347986,"B"],
+  ["RS Umum Pondok Indah","Kota Jakarta Selatan",-6.1862058,106.7353615,"B"],
+  ["RS Umum Daerah Pasar Minggu","Kota Jakarta Selatan",-6.2941029,106.8198333,"B"],
+  ["Rumah Sakit Adhyaksa Jakarta","Kota Jakarta Timur",-6.3077286,106.8928853,"B"],
+  ["RS Umum Yarsi","Kota Jakarta Pusat",-6.1697550,106.8693080,"B"],
+  ["RS Umum Gading Pluit","Kota Jakarta Utara",-6.1660616,106.9159781,"B"],
+  ["RS EMC Pulomas","Kota Jakarta Timur",-6.1803616,106.8838473,"B"],
+  ["RS Khusus THT Bedah KL Proklamasi","Kota Jakarta Pusat",-6.2020991,106.8470923,"B"],
+  ["RS Umum Ciputra Hospital Citragarden City","Kota Jakarta Barat",-6.1232615,106.7048537,"B"],
+  ["RS Umum Medistra","Kota Jakarta Selatan",-6.2397265,106.8338371,"B"],
+  ["RS Ketergantungan Obat","Kota Jakarta Timur",-6.3465300,106.8725086,"B"], 
+  ["RS Umum AL Dr. Mintohardjo","Kota Jakarta Pusat",-6.2109298,106.8120117,"B"],
+  ["RS Umum Pelni Petamburan","Kota Jakarta Barat",-6.1931252,106.8032191,"B"],  
+  ["RS Khusus Ibu dan Anak Brawijaya","Kota Jakarta Selatan",-6.2574229,106.8077493,"B"], 
+  ["RS Umum Harapan Bunda","Kota Jakarta Timur",-6.3028522,106.8679696,"B"],
+  ["RS Khusus JEC Menteng","Kota Jakarta Pusat",-6.1985833,106.8368754,"B"],
+  ["RS Umum Akademik Atma Jaya","Kota Jakarta Utara",-6.1258007,106.7930910,"B"],
+  ["RS Angkatan Udara dr. Esnawan Antariksa","Kota Jakarta Timur",-6.2570393,106.8917330,"B"],
+  ["RS Umum Sint Carolus","Kota Jakarta Pusat",-6.1955194,106.8513821,"B"],
+  ["RS Umum Hermina Daan Mogot","Kota Jakarta Barat",-6.1529564,106.7123012,"B"],
+  ["RS Umum Pusat Pertamina","Kota Jakarta Selatan",-6.2399278,106.7933566,"B"],
+  ["RS Ibu dan Anak Kemang Medical Care","Kota Jakarta Selatan",-6.2858851,106.8188376,"B"],
+  ["RS Tk. II M. Ridwan Meuraksa","Kota Jakarta Timur",-6.2943246,106.8825632,"B"],
+  ["RSGM LADOKGI R.E MARTADINATA","Kota Jakarta Pusat",-6.2118534,106.8084611,"B"],
+  ["RS Umum Pluit","Kota Jakarta Utara",-6.1258364,106.7995991,"B"],
+  ["RS Umum Daerah Pasar Rebo","Kota Jakarta Timur",-6.3040335,106.8623182,"B"],
+  ["RS Islam Jakarta Cempaka Putih","Kota Jakarta Pusat",-6.1705787,106.8708728,"B"],
+  ["RS Pondok Indah Puri Indah","Kota Jakarta Barat",-6.1861958,106.7353558,"B"],
+  ["RS Umum Tebet","Kota Jakarta Selatan",-6.2316992,106.8466474,"B"]
+];
+
+/* Initialize map */
+const map = L.map('map').setView([-5.15, 119.43], 8);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+/* Locate control (button to locate user) */
+L.control.locate({ position: 'topleft', flyTo: true, keepCurrentZoomLevel: false }).addTo(map);
+
+/* Marker cluster group */
+const markersGroup = L.markerClusterGroup();
+const markers = []; // will hold objects {marker, data}
+
+/* Create markers and list entries */
+const listEl = document.getElementById('list');
+const cityFilter = document.getElementById('cityFilter');
+const searchInput = document.getElementById('searchInput');
+const meta = document.getElementById('meta');
+const showAllBtn = document.getElementById('showAllBtn');
+
+const cities = new Set();
+hospitals.forEach((h, index) => {
+  const name = h[0], city = h[1], lat = h[2], lng = h[3], akreditasi = h[4] || 'Belum tersedia';
+  cities.add(city);
+
+  const popupHtml = `
+    <div style="min-width:200px">
+      <strong>${escapeHtml(name)}</strong><br/>
+      <em>${escapeHtml(city)}</em><br/><br/>
+      <div><strong>Akreditasi:</strong> <span style="color:#0b8043">${escapeHtml(akreditasi)}</span></div>
+      <br/>
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Petunjuk arah (Google Maps)</a>
+    </div>`;
+
+  const marker = L.marker([lat, lng], { title: name });
+
+  // bind popup content (will open on single click)
+  marker.bindPopup(popupHtml);
+
+  // when marker clicked, ensure popup opened and highlight corresponding list item
+  marker.on('click', () => {
+    // open popup (Leaflet opens on click anyway, but ensure)
+    marker.openPopup();
+
+    // highlight list item and scroll into view
+    const prev = listEl.querySelector('.item.selected');
+    if (prev) prev.classList.remove('selected');
+    const el = listEl.querySelector('.item[data-index="'+index+'"]');
+    if (el) {
+      el.classList.add('selected');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    // also update meta to show akreditasi briefly (optional)
+    // meta.textContent = `${name} — Akreditasi: ${akreditasi}`;
+    // setTimeout(() => updateMeta(), 4000); // restore after 4s if you want
+  });
+
+  markersGroup.addLayer(marker);
+  markers.push({ marker, name, city, lat, lng, akreditasi, index });
+
+  // List item
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.dataset.index = index;
+  item.innerHTML = `<h4>${escapeHtml(name)}</h4><p>${escapeHtml(city)}</p><div class="akred">Akreditasi: ${escapeHtml(akreditasi)}</div>`;
+  item.addEventListener('click', () => {
+    // remove previous selection highlight
+    const prev = listEl.querySelector('.item.selected');
+    if (prev) prev.classList.remove('selected');
+
+    item.classList.add('selected');
+    map.setView([lat, lng], 14, { animate: true });
+    marker.openPopup();
+  });
+  listEl.appendChild(item);
+});
+
+map.addLayer(markersGroup);
+
+/* populate city filter */
+[...cities].sort().forEach(c => {
+  const opt = document.createElement('option');
+  opt.value = c;
+  opt.textContent = c;
+  cityFilter.appendChild(opt);
+});
+
+updateMeta();
+
+/* Search and filter logic */
+function applyFilter() {
+  const q = (searchInput.value || '').trim().toLowerCase();
+  const city = cityFilter.value;
+
+  const matched = markers.filter(m => {
+    const byCity = city ? (m.city === city) : true;
+    const byQuery = q ? (m.name.toLowerCase().includes(q) || m.city.toLowerCase().includes(q)) : true;
+    return byCity && byQuery;
+  });
+
+  // Update list UI
+  const items = listEl.querySelectorAll('.item');
+  items.forEach(it => it.style.display = 'none');
+  matched.forEach(m => {
+    const el = listEl.querySelector('.item[data-index="'+m.index+'"]');
+    if (el) el.style.display = '';
+  });
+
+  // Update markers on map by clearing and adding matched
+  markersGroup.clearLayers();
+  matched.forEach(m => markersGroup.addLayer(m.marker));
+
+  // If only one match, zoom to it
+  if (matched.length === 1) {
+    map.setView([matched[0].lat, matched[0].lng], 14, { animate: true });
+    matched[0].marker.openPopup();
+    // highlight the single item
+    const el = listEl.querySelector('.item[data-index="'+matched[0].index+'"]');
+    if (el) {
+      const prev = listEl.querySelector('.item.selected');
+      if (prev) prev.classList.remove('selected');
+      el.classList.add('selected');
+    }
+  } else {
+    // remove any selection highlight if multiple results
+    const prev = listEl.querySelector('.item.selected');
+    if (prev) prev.classList.remove('selected');
+  }
+
+  updateMeta(matched.length);
+}
+
+searchInput.addEventListener('input', () => applyFilter());
+cityFilter.addEventListener('change', () => applyFilter());
+
+showAllBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  cityFilter.value = '';
+  applyFilter();
+  // reset markers to all
+  markersGroup.clearLayers();
+  markers.forEach(m => markersGroup.addLayer(m.marker));
+  updateMeta();
+  try {
+    map.fitBounds(markersGroup.getBounds(), { padding: [30,30] });
+  } catch (e) { /* ignore */ }
+});
+
+/* Toggle sidebar (for small screens) */
+const toggleSidebar = document.getElementById('toggleSidebar');
+const sidebar = document.getElementById('sidebar');
+toggleSidebar.addEventListener('click', () => {
+  if (sidebar.style.display === 'none') {
+    sidebar.style.display = '';
+    toggleSidebar.textContent = 'Sembunyikan';
+  } else {
+    sidebar.style.display = 'none';
+    toggleSidebar.textContent = 'Tampilkan';
+  }
+});
+
+/* Update meta text */
+function updateMeta(count) {
+  const total = markers.length;
+  const visible = (typeof count === 'number') ? count : (() => {
+    // count visible elements in list
+    const v = listEl.querySelectorAll('.item:not([style*="display: none"])').length;
+    return v || total;
+  })();
+  meta.textContent = `${visible} dari ${total} rumah sakit`;
+}
+
+/* small helper to escape html in dynamic text */
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#39;');
+}
+
+/* Fit to all markers initially (if bounds valid) */
+if (markers.length) {
+  try {
+    map.fitBounds(markersGroup.getBounds(), { padding: [30,30] });
+  } catch (e) {
+    // ignore
+  }
+}
+
+/* Initial meta */
+updateMeta();
+
+/* Accessibility: focus search on load on wide screens */
+if (window.innerWidth > 700) {
+  searchInput.focus();
+}
+</script>
+
+</body>
+</html>
